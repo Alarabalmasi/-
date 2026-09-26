@@ -1,0 +1,20 @@
+{
+  "name": "alarab-almasi-integrations",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "خدمة تكامل بيانات العرب الماسي: Zid, WhatsApp Business, Google Ads, Search Console -> Google Sheets",
+  "scripts": {
+    "auth:google": "node --experimental-strip-types src/cli/google-oauth.ts",
+    "check:env": "node --experimental-strip-types src/cli/check-env.ts",
+    "sync:all": "node --experimental-strip-types src/cli/run.ts all",
+    "sync:zid": "node --experimental-strip-types src/cli/run.ts zid",
+    "sync:whatsapp": "node --experimental-strip-types src/cli/run.ts whatsapp",
+    "sync:ads": "node --experimental-strip-types src/cli/run.ts google-ads",
+    "sync:search": "node --experimental-strip-types src/cli/run.ts search-console",
+    "dry-run": "node --experimental-strip-types src/cli/run.ts all --mock --dry-run",
+    "webhook:whatsapp": "node --experimental-strip-types src/cli/whatsapp-webhook.ts",
+    "test": "node --experimental-strip-types --test tests/*.test.ts"
+  },
+  "engines": {"node": ">=22.6.0"}
+}

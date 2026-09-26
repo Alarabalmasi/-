@@ -1,0 +1,10 @@
+.env
+.env.*
+!.env.example
+client_secret_*.json
+node_modules/
+data/*.lock
+data/*.ndjson
+data/state.json
+coverage/
+.DS_Store
