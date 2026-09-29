@@ -72,7 +72,9 @@
 - `ZID_MANAGER_TOKEN`
 - `ZID_STORE_ID`
 
-الصلاحيات المطلوبة: `orders.read` و`products.read`. Zid v1 يتطلب Authorization + X-Manager-Token للطلبات، ويدعم Access-Token/X-Manager-Token في واجهات المنتجات. OAuth لدى Zid هو Authorization Code Grant ويجب حفظ الرموز في تخزين آمن.
+الصلاحيات المطلوبة للقراءة فقط: `orders.read` و`products.read`. يطلب Orders ترويسة `Authorization` و`X-Manager-Token`. تستخدم Products وStocks `Access-Token` (رمز المدير المباشر) و`Store-Id` و`Role: Manager`.
+
+لإصدار `ZID_AUTHORIZATION_TOKEN` استخدم `npm run auth:zid`. يسجل التطبيق عنوان callback المحلي `http://127.0.0.1:8789/oauth/callback`، ويطلب Client ID وClient Secret من الطرفية دون إظهار المدخلات؛ لا يحفظ Client Secret. يحفظ Authorization token وManager Token وStore ID محليًا في `.env` بعد نجاح التفويض.
 
 ### WhatsApp Business Platform
 
@@ -88,6 +90,7 @@
 
 ```bash
 npm run check:env
+npm run auth:zid
 npm run dry-run
 npm test
 npm run sync:all

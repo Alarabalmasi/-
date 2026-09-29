@@ -3,10 +3,22 @@ import { env } from '../../config/env.ts';
 import { fetchJson } from '../../services/sync/http.ts';
 import { isoDateInTimezone, normalizeCurrency, normalizeOrderStatus, stableKey, toNumberOrNull } from '../../services/normalization/index.ts';
 
-function headers() {
+function authorizationHeader() {
+  return /^Bearer\s/i.test(env.zidAuthorizationToken)
+    ? env.zidAuthorizationToken
+    : `Bearer ${env.zidAuthorizationToken}`;
+}
+
+function orderHeaders() {
   return {
-    Authorization: env.zidAuthorizationToken,
+    Authorization: authorizationHeader(),
     'X-Manager-Token': env.zidManagerToken,
+    'Accept-Language': 'en',
+  };
+}
+
+function productHeaders() {
+  return {
     'Access-Token': env.zidManagerToken,
     'Store-Id': env.zidStoreId,
     Role: 'Manager',
@@ -28,7 +40,7 @@ export class ZidConnector implements Connector {
   readonly name = 'zid' as const;
 
   async testConnection() {
-    const data = await fetchJson(`${env.zidBaseUrl}/managers/store/orders?page=1&per_page=1&payload_type=simple`, { headers: headers() });
+    const data = await fetchJson(`${env.zidBaseUrl}/managers/store/orders?page=1&per_page=1&payload_type=simple`, { headers: orderHeaders() });
     return { ok: Array.isArray(data?.orders) || Array.isArray(data?.results), detail: 'Zid orders endpoint reachable' };
   }
 
@@ -37,14 +49,14 @@ export class ZidConnector implements Connector {
     const warnings: string[] = [];
     const orders: any[] = [];
     for (let page = 1; page <= 100; page++) {
-      const data = await fetchJson(`${env.zidBaseUrl}/managers/store/orders?page=${page}&per_page=100&payload_type=simple`, { headers: headers() });
+      const data = await fetchJson(`${env.zidBaseUrl}/managers/store/orders?page=${page}&per_page=100&payload_type=simple`, { headers: orderHeaders() });
       const batch = data?.orders || data?.results || [];
       if (!Array.isArray(batch) || batch.length === 0) break;
       orders.push(...batch);
       if (batch.length < 100) break;
     }
 
-    const productData = await fetchJson(`${env.zidBaseUrl}/products/?page=1&page_size=100`, { headers: headers() });
+    const productData = await fetchJson(`${env.zidBaseUrl}/products/?page=1&page_size=100`, { headers: productHeaders() });
     const products = productData?.results || productData?.products || [];
 
     const orderRows = orders
@@ -91,7 +103,7 @@ export class ZidConnector implements Connector {
         if (!pid) continue;
         let stocks: any[] = [];
         try {
-          const s = await fetchJson(`${env.zidBaseUrl}/products/${pid}/stocks/`, { headers: headers() });
+          const s = await fetchJson(`${env.zidBaseUrl}/products/${pid}/stocks/`, { headers: productHeaders() });
           stocks = s?.results || s?.stocks || [];
         } catch {
           warnings.push(`تعذر جلب مخزون المنتج ${pid}`);

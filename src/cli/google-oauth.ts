@@ -9,6 +9,7 @@ const GOOGLE_TOKEN_URL = 'https://oauth2.googleapis.com/token';
 const CALLBACK_PATH = '/oauth2callback';
 const CALLBACK_TIMEOUT_MS = 15 * 60 * 1000;
 const GOOGLE_SCOPES = [
+  'https://www.googleapis.com/auth/adwords',
   'https://www.googleapis.com/auth/spreadsheets',
   'https://www.googleapis.com/auth/webmasters.readonly',
 ];
