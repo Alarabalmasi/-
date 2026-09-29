@@ -242,6 +242,17 @@ async function main(): Promise<void> {
   if (!fs.existsSync(envPath)) throw new Error('The project .env file is missing.');
 
   const initialEnv = fs.readFileSync(envPath, 'utf8');
+  const redirectUri = readEnvValue(initialEnv, 'ZID_REDIRECT_URI');
+  let parsedRedirectUri: URL;
+  try {
+    parsedRedirectUri = new URL(redirectUri);
+  } catch {
+    throw new Error('Set ZID_REDIRECT_URI to the registered HTTPS callback URL.');
+  }
+  if (parsedRedirectUri.protocol !== 'https:' || parsedRedirectUri.pathname !== CALLBACK_PATH || parsedRedirectUri.search || parsedRedirectUri.hash) {
+    throw new Error('ZID_REDIRECT_URI must be HTTPS and end with /oauth/callback.');
+  }
+
   const managerToken = readEnvValue(initialEnv, 'ZID_MANAGER_TOKEN') || await readHidden('Zid direct Manager Token (input hidden): ');
   const storeId = readEnvValue(initialEnv, 'ZID_STORE_ID') || await readHidden('Zid Store ID (input hidden): ');
   const clientId = await readHidden('Zid app Client ID (input hidden): ');
@@ -249,7 +260,6 @@ async function main(): Promise<void> {
   if (!managerToken || !storeId || !clientId || !clientSecret) throw new Error('A required Zid value was empty.');
 
   const credentials = { clientId, clientSecret };
-  const redirectUri = `http://${CALLBACK_HOST}:${CALLBACK_PORT}${CALLBACK_PATH}`;
   const state = randomBytes(32).toString('base64url');
   const authorizeUrl = new URL(ZID_AUTHORIZE_URL);
   authorizeUrl.search = new URLSearchParams({
@@ -280,7 +290,32 @@ async function main(): Promise<void> {
   }
 }
 
-main().catch(() => {
-  console.error('Zid OAuth failed. No credential values were printed.');
+async function runCallbackProbe(): Promise<void> {
+  const server = createServer((request, response) => {
+    const requestUrl = new URL(request.url || '/', `http://${CALLBACK_HOST}`);
+    if (request.method === 'GET' && requestUrl.pathname === CALLBACK_PATH) {
+      response.writeHead(204, { 'cache-control': 'no-store' }).end();
+      return;
+    }
+    response.writeHead(404, { 'cache-control': 'no-store' }).end();
+  });
+
+  await new Promise<void>((resolve, reject) => {
+    server.once('error', () => reject(new Error('Could not start the Zid callback probe.')));
+    server.listen(CALLBACK_PORT, CALLBACK_HOST, () => resolve());
+  });
+
+  console.log('Zid callback probe listening on loopback. OAuth is disabled.');
+  const stop = () => server.close(() => process.exit(0));
+  process.once('SIGINT', stop);
+  process.once('SIGTERM', stop);
+}
+
+const callbackProbe = process.argv.includes('--callback-probe');
+const run = callbackProbe ? runCallbackProbe : main;
+run().catch(() => {
+  console.error(callbackProbe
+    ? 'Zid callback probe failed.'
+    : 'Zid OAuth failed. No credential values were printed.');
   process.exitCode = 1;
 });

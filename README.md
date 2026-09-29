@@ -74,7 +74,7 @@
 
 الصلاحيات المطلوبة للقراءة فقط: `orders.read` و`products.read`. يطلب Orders ترويسة `Authorization` و`X-Manager-Token`. تستخدم Products وStocks `Access-Token` (رمز المدير المباشر) و`Store-Id` و`Role: Manager`.
 
-لإصدار `ZID_AUTHORIZATION_TOKEN` استخدم `npm run auth:zid`. يسجل التطبيق عنوان callback المحلي `http://127.0.0.1:8789/oauth/callback`، ويطلب Client ID وClient Secret من الطرفية دون إظهار المدخلات؛ لا يحفظ Client Secret. يحفظ Authorization token وManager Token وStore ID محليًا في `.env` بعد نجاح التفويض.
+لإصدار `ZID_AUTHORIZATION_TOKEN` استخدم نطاق HTTPS مؤقتًا مجانيًا عبر Cloudflare Quick Tunnel، مثل `cloudflared tunnel --url http://127.0.0.1:8789`. سجّل العنوان الناتج مع `/oauth/callback` في تطبيق Zid وضعه في `ZID_REDIRECT_URI` داخل `.env`، مع إبقاء tunnel قيد التشغيل أثناء التفويض. استخدم `npm run auth:zid` لإكمال OAuth. يطلب الأمر Client ID وClient Secret من الطرفية دون إظهار المدخلات ولا يحفظ Client Secret؛ بعد الموافقة يحفظ Authorization token وManager Token وStore ID محليًا في `.env`. رابط Quick Tunnel مؤقت ويتغير عند إعادة تشغيله.
 
 ### WhatsApp Business Platform
 
