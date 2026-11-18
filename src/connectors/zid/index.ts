@@ -56,8 +56,16 @@ export class ZidConnector implements Connector {
       if (batch.length < 100) break;
     }
 
-    const productData = await fetchJson(`${env.zidBaseUrl}/products/?page=1&page_size=100`, { headers: productHeaders() });
-    const products = productData?.results || productData?.products || [];
+    // Fetch every page. A single page silently excluded products once the catalog exceeded 100 items.
+    const products: any[] = [];
+    for (let page = 1; page <= 100; page++) {
+      const productData = await fetchJson(`${env.zidBaseUrl}/products/?page=${page}&page_size=100`, { headers: productHeaders() });
+      const batch = productData?.results || productData?.products || [];
+      if (!Array.isArray(batch)) throw new Error('Zid products API returned an unexpected response.');
+      products.push(...batch);
+      if (batch.length < 100) break;
+      if (page === 100) warnings.push('Zid product pagination reached the safety cap of 100 pages.');
+    }
 
     const orderRows = orders
       .filter((o: any) => {
@@ -109,12 +117,9 @@ export class ZidConnector implements Connector {
           warnings.push(`تعذر جلب مخزون المنتج ${pid}`);
         }
         if (!stocks.length) {
-          stockRows.push({
-            record_type: 'stock', key: stableKey(['stock', pid, 'default']), date: isoDateInTimezone(ctx.window.end),
-            order_id: null, status: null, revenue: null, net_sales: null, discount: null, shipping: null, tax: null,
-            currency: 'SAR', branch: null, channel: null, quantity: toNumberOrNull(p.quantity), product_id: String(pid), sku: p.sku ?? null,
-            product_name: p.name?.ar ?? p.name?.en ?? p.name ?? null, available_quantity: toNumberOrNull(p.quantity), critical_stock: null,
-          });
+          // Parent stock can be empty even when the variants have inventory.
+          // Never invent an available quantity from the parent product.
+          warnings.push(`لم يتم العثور على سجلات مخزون مؤكدة للمنتج ${pid}؛ تم استبعاد كمية غير مؤكدة`);
         } else {
           for (const s of stocks) {
             const q = toNumberOrNull(s.available_quantity);
