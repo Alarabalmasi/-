@@ -1,0 +1,51 @@
+name: Al Arab Al Masi - Zid to Google Sheets
+
+on:
+  schedule:
+    # 03:20 Saudi Arabia time (UTC+03), daily.
+    - cron: '20 0 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: almasi-zid-sheets-daily
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    # Explicit merchant enable switch. Never run against production automatically before verification.
+    if: ${{ vars.ALARAB_SYNC_ENABLED == 'true' }}
+    env:
+      APP_TIMEZONE: Asia/Riyadh
+      GOOGLE_SHEET_ID: '1GtRjDlzEBy62EOjMBV9Zeyuj5vS-aR_hxlPtK2M_e1w'
+      GOOGLE_CLIENT_ID: ${{ secrets.GOOGLE_CLIENT_ID }}
+      GOOGLE_CLIENT_SECRET: ${{ secrets.GOOGLE_CLIENT_SECRET }}
+      GOOGLE_REFRESH_TOKEN: ${{ secrets.GOOGLE_REFRESH_TOKEN }}
+      ZID_AUTHORIZATION_TOKEN: ${{ secrets.ZID_AUTHORIZATION_TOKEN }}
+      ZID_MANAGER_TOKEN: ${{ secrets.ZID_MANAGER_TOKEN }}
+      ZID_STORE_ID: ${{ secrets.ZID_STORE_ID }}
+    steps:
+      - name: Checkout reviewed source
+        uses: actions/checkout@v4
+      - name: Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Verify required credentials are present without exposing their values
+        shell: bash
+        run: |
+          set -euo pipefail
+          for key in GOOGLE_SHEET_ID GOOGLE_CLIENT_ID GOOGLE_CLIENT_SECRET GOOGLE_REFRESH_TOKEN ZID_AUTHORIZATION_TOKEN ZID_MANAGER_TOKEN ZID_STORE_ID; do
+            if [[ -z "${!key:-}" ]]; then
+              echo "::error::Missing required GitHub Actions secret or setting: ${key}"
+              exit 1
+            fi
+          done
+      - name: Unit tests (no writes)
+        run: npm test
+      - name: Read Zid and write verified data to the existing Google Sheet
+        run: npm run sync:zid

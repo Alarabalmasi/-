@@ -19,6 +19,8 @@ function orderHeaders() {
 
 function productHeaders() {
   return {
+    Authorization: authorizationHeader(),
+    'X-Manager-Token': env.zidManagerToken,
     'Access-Token': env.zidManagerToken,
     'Store-Id': env.zidStoreId,
     Role: 'Manager',
@@ -56,8 +58,16 @@ export class ZidConnector implements Connector {
       if (batch.length < 100) break;
     }
 
-    const productData = await fetchJson(`${env.zidBaseUrl}/products/?page=1&page_size=100`, { headers: productHeaders() });
-    const products = productData?.results || productData?.products || [];
+    // Fetch every page. A single page silently excluded products once the catalog exceeded 100 items.
+    const products: any[] = [];
+    for (let page = 1; page <= 100; page++) {
+      const productData = await fetchJson(`${env.zidBaseUrl}/products/?page=${page}&page_size=100`, { headers: productHeaders() });
+      const batch = productData?.results || productData?.products || [];
+      if (!Array.isArray(batch)) throw new Error('Zid products API returned an unexpected response.');
+      products.push(...batch);
+      if (batch.length < 100) break;
+      if (page === 100) warnings.push('Zid product pagination reached the safety cap of 100 pages.');
+    }
 
     const orderRows = orders
       .filter((o: any) => {
@@ -97,37 +107,57 @@ export class ZidConnector implements Connector {
       });
 
     const stockRows: Record<string, unknown>[] = [];
-    if (Array.isArray(products)) {
-      for (const p of products.slice(0, 300)) {
-        const pid = p.id ?? p.product_id;
-        if (!pid) continue;
-        let stocks: any[] = [];
-        try {
-          const s = await fetchJson(`${env.zidBaseUrl}/products/${pid}/stocks/`, { headers: productHeaders() });
-          stocks = s?.results || s?.stocks || [];
-        } catch {
-          warnings.push(`تعذر جلب مخزون المنتج ${pid}`);
+    // Zid's parent product stock endpoint can be empty while its variants are stocked.
+    // Resolve the product details and record each actual variant/location combination.
+    for (const p of products) {
+      const pid = p.id ?? p.product_id;
+      if (!pid) continue;
+      const detail = await fetchJson(`${env.zidBaseUrl}/products/${pid}/`, { headers: productHeaders() });
+      const variants = Array.isArray(detail?.variants) ? detail.variants : [];
+      const items = variants.length ? variants : [detail];
+      for (const item of items) {
+        const itemId = item.id ?? pid;
+        let stocks = Array.isArray(item.stocks) ? item.stocks : [];
+        if (!stocks.length) {
+          const stockData = await fetchJson(`${env.zidBaseUrl}/products/${itemId}/stocks/`, { headers: productHeaders() });
+          stocks = stockData?.results || stockData?.stocks || [];
+          if (!Array.isArray(stocks)) throw new Error(`Invalid stock records for product ${itemId}`);
         }
         if (!stocks.length) {
-          stockRows.push({
-            record_type: 'stock', key: stableKey(['stock', pid, 'default']), date: isoDateInTimezone(ctx.window.end),
-            order_id: null, status: null, revenue: null, net_sales: null, discount: null, shipping: null, tax: null,
-            currency: 'SAR', branch: null, channel: null, quantity: toNumberOrNull(p.quantity), product_id: String(pid), sku: p.sku ?? null,
-            product_name: p.name?.ar ?? p.name?.en ?? p.name ?? null, available_quantity: toNumberOrNull(p.quantity), critical_stock: null,
-          });
-        } else {
-          for (const s of stocks) {
-            const q = toNumberOrNull(s.available_quantity);
-            stockRows.push({
-              record_type: 'stock', key: stableKey(['stock', pid, s.location?.id ?? s.id]), date: isoDateInTimezone(ctx.window.end),
-              order_id: null, status: null, revenue: null, net_sales: null, discount: null, shipping: null, tax: null,
-              currency: 'SAR', branch: s.location?.name ?? null, channel: null, quantity: q, product_id: String(pid), sku: p.sku ?? null,
-              product_name: p.name?.ar ?? p.name?.en ?? p.name ?? null, available_quantity: q, critical_stock: q === null ? null : q <= 3,
-            });
+          warnings.push(`لا توجد سجلات مخزون قابلة للتحقق للمتغير ${itemId}`);
+          continue;
+        }
+        for (const stock of stocks) {
+          const locationId = stock.location?.id ?? '';
+          if (!locationId) {
+            warnings.push(`مخزون بلا معرف مستودع للمتغير ${itemId}`);
+            continue;
           }
+          const infinite = stock.is_infinite === true;
+          const quantity = infinite ? null : toNumberOrNull(stock.available_quantity);
+          if (!infinite && quantity === null) {
+            warnings.push(`كمية غير معروفة للمتغير ${itemId} في ${locationId}`);
+            continue;
+          }
+          stockRows.push({
+            record_type: 'stock',
+            key: stableKey(['stock', itemId, locationId]),
+            date: isoDateInTimezone(ctx.window.end),
+            order_id: null, status: null, revenue: null, net_sales: null,
+            discount: null, shipping: null, tax: null, currency: 'SAR',
+            branch: stock.location?.name?.ar ?? stock.location?.name?.en ?? stock.location?.name ?? null,
+            channel: null,
+            quantity,
+            product_id: String(itemId),
+            sku: item.sku ?? p.sku ?? null,
+            product_name: item.name?.ar ?? item.name?.en ?? item.name ?? p.name?.ar ?? p.name?.en ?? null,
+            available_quantity: quantity,
+            critical_stock: infinite ? false : quantity <= 3,
+          });
         }
       }
     }
+    if (stockRows.length === 0) throw new Error('No verified variant-level inventory rows. Refusing an empty inventory sync.');
     return { source: this.name, rows: [...orderRows, ...stockRows], pulled: orders.length + (Array.isArray(products) ? products.length : 0), warnings };
   }
 
